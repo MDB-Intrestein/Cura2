@@ -18,7 +18,7 @@ def getMetaData():
         "profile_reader": [
             {
                 "extension": "curaprofile",
-                "description": catalog.i18nc("@item:inlistbox", "Cura Profile")
+                "description": catalog.i18nc("@item:inlistbox", "Cura 2 Profile")
             }
         ]
     }
