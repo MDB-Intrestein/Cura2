@@ -18,6 +18,7 @@ LC_MESSAGES
 *~
 *.qm
 .idea
+*.orig
 
 # Eclipse+PyDev
 .project
