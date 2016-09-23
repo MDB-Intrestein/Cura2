@@ -3,14 +3,14 @@ from UM.Scene.Selection import Selection
 from UM.Math.Vector import Vector
 
 from UM.i18n import i18nCatalog
-i18n_catalog = i18nCatalog("ImperialPlugin")
+i18n_catalog = i18nCatalog("UnitConversionPlugin")
 
 
-class ImperialPlugin(Extension):
+class UnitConversionPlugin(Extension):
     def __init__(self):
         super().__init__()
-        self.addMenuItem(i18n_catalog.i18n("Convert to metric"), self.convertToMetric)
-        self.addMenuItem(i18n_catalog.i18n("Convert to imperial"), self.convertToImperial)
+        self.addMenuItem(i18n_catalog.i18n("Convert to METRIC"), self.convertToMetric)
+        self.addMenuItem(i18n_catalog.i18n("Convert to IMPERIAL"), self.convertToImperial)
 
     ##  Scales all selected objects by 25.4 (inch to mm)
     def convertToMetric(self):

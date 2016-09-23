@@ -1,9 +1,9 @@
 # Copyright (c) 2015 Jaime van Kessel
 # The ImperialPlugin is released under the terms of the AGPLv3 or higher.
 
-from . import ImperialPlugin
+from . import UnitConversionPlugin
 from UM.i18n import i18nCatalog
-i18n_catalog = i18nCatalog("ImperialPlugin")
+i18n_catalog = i18nCatalog("UnitConversionPlugin")
 
 
 def getMetaData():
@@ -11,7 +11,7 @@ def getMetaData():
         "type": "extension",
         "plugin":
         {
-            "name": "Imperial plugin",
+            "name": "Unit conversion",
             "author": "Jaime van Kessel",
             "version": "2.2",
             "api": 3,
@@ -21,4 +21,4 @@ def getMetaData():
 
 
 def register(app):
-    return {"extension": ImperialPlugin.ImperialPlugin()}
+    return {"extension": UnitConversionPlugin.UnitConversionPlugin()}
