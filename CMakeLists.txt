@@ -35,14 +35,15 @@ if(NOT APPLE AND NOT WIN32)
     install(FILES cura_app.py
             DESTINATION ${CMAKE_INSTALL_BINDIR}
             PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-            RENAME cura)
+            RENAME cura2)
     install(DIRECTORY cura
             DESTINATION lib/python${PYTHON_VERSION_MAJOR}/dist-packages
             FILES_MATCHING PATTERN *.py)
     install(FILES ${CMAKE_BINARY_DIR}/CuraVersion.py
             DESTINATION lib/python${PYTHON_VERSION_MAJOR}/dist-packages/cura)
     install(FILES ${CMAKE_BINARY_DIR}/cura.desktop
-            DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
+            RENAME cura2.desktop)
     install(FILES cura.appdata.xml
             DESTINATION ${CMAKE_INSTALL_DATADIR}/appdata)
     install(FILES cura.sharedmimeinfo
