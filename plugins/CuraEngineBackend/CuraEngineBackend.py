@@ -291,8 +291,6 @@ class CuraEngineBackend(Backend):
         if source is self._scene.getRoot():
             return
 
-        application = Application.getInstance()
-
         should_pause = False
         for node in DepthFirstIterator(self._scene.getRoot()):
             if node.callDecoration("isBlockSlicing"):
@@ -301,15 +299,10 @@ class CuraEngineBackend(Backend):
             if gcode_list is not None:
                 self._scene.gcode_list = gcode_list
 
-        print_information = application.getPrintInformation()
         if should_pause:
             self.pauseSlicing()
-            if print_information:
-                print_information.setPreSliced(True)
         else:
             self.continueSlicing()
-            if print_information:
-                print_information.setPreSliced(False)
 
         if source.getMeshData() is None:
             return
