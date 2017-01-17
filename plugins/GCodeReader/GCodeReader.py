@@ -29,7 +29,6 @@ class GCodeReader(MeshReader):
     def __init__(self):
         super(GCodeReader, self).__init__()
         self._supported_extensions = [".gcode", ".g"]
-        Application.getInstance().hideMessageSignal.connect(self._onHideMessage)
         self._cancelled = False
         self._message = None
         self._clearValues()
@@ -74,9 +73,11 @@ class GCodeReader(MeshReader):
         except:
             return None
 
-    def _onHideMessage(self, message):
-        if message == self._message:
-            self._cancelled = True
+    def _actionTriggered(self, message, action):
+        if action == "cancel":
+            if message == self._message:
+                self._cancelled = True
+                message.hide()
 
     @staticmethod
     def _getNullBoundingBox():
@@ -221,8 +222,10 @@ class GCodeReader(MeshReader):
 
             self._clearValues()
 
-            self._message = Message(catalog.i18nc("@info:status", "Parsing G-code"), lifetime=0)
+            self._message = Message(catalog.i18nc("@info:status", "Parsing G-code"), lifetime=0, dismissable=False)
             self._message.setProgress(0)
+            self._message.addAction("cancel", catalog.i18nc("@action:button", "Cancel"), "[no_icon]", "[no_description]")
+            self._message.actionTriggered.connect(self._actionTriggered)
             self._message.show()
 
             Logger.log("d", "Parsing %s" % file_name)
