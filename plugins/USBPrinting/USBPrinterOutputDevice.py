@@ -216,9 +216,11 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
     def getSerialPort(self):
         return self._serial_port
 
-    ##  Try to connect the serial. This simply starts the thread, which runs _connect.
+    ##  Try to connect the serial. This simply starts the thread, which runs _connect. Also
+    #   makes sure that the computer will not go to sleep during the print
     @pyqtSlot()
     def _connect(self):
+        Application.getInstance().preventComputerFromSleeping(True)
         if not self._updating_firmware and not self._connect_thread.isAlive() and self._connection_state in [ConnectionState.closed, ConnectionState.error]:
             self._connect_thread.start()
 
@@ -520,6 +522,8 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
         self._listen_thread.daemon = True
         self._serial = None
         self._serial_port = None
+
+        Application.getInstance().preventComputerFromSleeping(False)
 
     ##  Directly send the command, withouth checking connection state (eg; printing).
     #   \param cmd string with g-code
