@@ -203,13 +203,25 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
         self._gcode.insert(0, "M110")
         self._gcode_position = 0
         self._print_start_time_100 = None
-        self._is_printing = True
         self._print_start_time = time.time()
+        self._printingStarted()
 
         for i in range(0, 4):  # Push first 4 entries before accepting other inputs
             self._sendNextGcodeLine()
 
         self.writeFinished.emit(self)
+
+    ## Called when print is starting
+    def _printingStarted(self):
+        Application.getInstance().preventComputerFromSleeping(True)
+        self._is_printing = True
+
+    ## Called when print is finished or cancelled
+    def _printingStopped(self):
+        Application.getInstance().preventComputerFromSleeping(False)
+        self._is_printing = False
+        self._is_paused = False
+        self._updateJobState("ready")
 
     ##  Get the serial port string of this connection.
     #   \return serial port
@@ -847,9 +859,7 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
             # Printing is done, reset progress
             self._gcode_position = 0
             self.setProgress(0)
-            self._is_printing = False
-            self._is_paused = False
-            self._updateJobState("ready")
+            self._printingStopped()
         self.progressChanged.emit()
 
     ##  Cancel the current print. Printer connection wil continue to listen.
@@ -863,9 +873,7 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
         self._sendCommand("M104 S0")
         self._sendCommand("M107")
         self._sendCommand("M84")
-        self._is_printing = False
-        self._is_paused = False
-        self._updateJobState("ready")
+        self._printingStopped()
         Application.getInstance().showPrintMonitor.emit(False)
 
     ##  Check if the process did not encounter an error yet.
