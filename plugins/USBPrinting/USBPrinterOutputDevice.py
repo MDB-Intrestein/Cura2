@@ -211,6 +211,18 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
 
         self.writeFinished.emit(self)
 
+    ## Called when print is starting
+    def _printingStarted(self):
+        Application.getInstance().preventComputerFromSleeping(True)
+        self._is_printing = True
+
+    ## Called when print is finished or cancelled
+    def _printingStopped(self):
+        Application.getInstance().preventComputerFromSleeping(False)
+        self._is_printing = False
+        self._is_paused = False
+        self._updateJobState("ready")
+
     ##  Get the serial port string of this connection.
     #   \return serial port
     def getSerialPort(self):
@@ -220,7 +232,6 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
     #   makes sure that the computer will not go to sleep during the print
     @pyqtSlot()
     def _connect(self):
-        Application.getInstance().preventComputerFromSleeping(True)
         if not self._updating_firmware and not self._connect_thread.isAlive() and self._connection_state in [ConnectionState.closed, ConnectionState.error]:
             self._connect_thread.start()
 
@@ -523,8 +534,6 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
         self._serial = None
         self._serial_port = None
 
-        Application.getInstance().preventComputerFromSleeping(False)
-
     ##  Directly send the command, withouth checking connection state (eg; printing).
     #   \param cmd string with g-code
     def _sendCommand(self, cmd):
@@ -734,6 +743,11 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
         self.setProgress((self._gcode_position / len(self._gcode)) * 100)
         self.progressChanged.emit()
 
+    def _setIsPrinting(self, value):
+    ##  Updates the state indicating whether we are printing
+    #   and controls USB sleep mode.
+
+
     ##  Set the state of the print.
     #   Sent from the print monitor
     def _setJobState(self, job_state):
@@ -851,9 +865,7 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
             # Printing is done, reset progress
             self._gcode_position = 0
             self.setProgress(0)
-            self._is_printing = False
-            self._is_paused = False
-            self._updateJobState("ready")
+            self._printingStopped()
         self.progressChanged.emit()
 
     ##  Cancel the current print. Printer connection wil continue to listen.
@@ -867,9 +879,7 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
         self._sendCommand("M104 S0")
         self._sendCommand("M107")
         self._sendCommand("M84")
-        self._is_printing = False
-        self._is_paused = False
-        self._updateJobState("ready")
+        self._printingStopped()
         Application.getInstance().showPrintMonitor.emit(False)
 
     ##  Check if the process did not encounter an error yet.
