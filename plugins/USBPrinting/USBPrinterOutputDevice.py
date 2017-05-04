@@ -203,8 +203,8 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
         self._gcode.insert(0, "M110")
         self._gcode_position = 0
         self._print_start_time_100 = None
-        self._is_printing = True
         self._print_start_time = time.time()
+        self._printingStarted()
 
         for i in range(0, 4):  # Push first 4 entries before accepting other inputs
             self._sendNextGcodeLine()
@@ -742,11 +742,6 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
         self._gcode_position += 1
         self.setProgress((self._gcode_position / len(self._gcode)) * 100)
         self.progressChanged.emit()
-
-    def _setIsPrinting(self, value):
-    ##  Updates the state indicating whether we are printing
-    #   and controls USB sleep mode.
-
 
     ##  Set the state of the print.
     #   Sent from the print monitor
