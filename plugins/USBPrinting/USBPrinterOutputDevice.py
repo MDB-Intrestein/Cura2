@@ -246,21 +246,6 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
         # for i in range(0, 4):  # Push first 4 entries before accepting other inputs
         #    self._sendNextGcodeLine()
 
-        # Corrupt some fraction of the GCODEs checksum so that we can exercise the
-        # error correction code.
-        try:
-            if DEBUG_SERIAL_RETRY:
-                noisy = NoisySerialConnection(self._serial)
-                noisy.setWriteErrorRate(1,150)
-                log = LoggingSerialConnection(noisy, "gcode.log")
-                self._serial_buffered = MarlinSerialProtocol(log)
-            else:
-                self._serial_buffered = MarlinSerialProtocol(self._serial)
-        except Exception as e:
-            Logger.log("e","Unexpected error while writing serial port %s" % e)
-            self._setErrorState("Unexpected error while writing serial port %s " % e)
-            self.close()
-
         self.writeFinished.emit(self)
         # Returning Error.SUCCESS here, currently is unused
         return result
@@ -601,7 +586,6 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
       # while not self._command_queue.empty():
       #     self._command_queue.get()
       # self._printer_buffer.clear()
-        self._serial_buffered = None
         self._is_printing = False
         self._is_paused = False
 
@@ -653,15 +637,12 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
       # self._command_queue.put(cmd)
         if self._serial is None or self._isInvalidCommand(cmd):
             return
-        if self._serial_buffered:
-            self._serial_buffered.enqueueCommand(cmd)
-        else:
-            try:
-                self._serialWriteWithRetry(("\n" + cmd + "\n").encode())
-            except Exception as e:
-                Logger.log("e","Unexpected error while writing serial port %s" % e)
-                self._setErrorState("Unexpected error while writing serial port %s " % e)
-                self.close()
+        try:
+            self._serialWriteWithRetry(("\n" + cmd + "\n").encode())
+        except Exception as e:
+            Logger.log("e","Unexpected error while writing serial port %s" % e)
+            self._setErrorState("Unexpected error while writing serial port %s " % e)
+            self.close()
 
     ##  Set the error state with a message.
     #   \param error String with the error message.
@@ -719,20 +700,35 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
     ##  Listen thread function.
     def _listen(self):
         Logger.log("i", "Printer connection listen thread started for %s" % self._serial_port)
+
+        # Wrap a MarlinSerialProtocol object around the serial port
+        # for serial error correction.
+        try:
+            if DEBUG_SERIAL_RETRY:
+                # Corrupt some fraction of the GCODEs checksum so that we can exercise the
+                # error correction code.
+                noisy = NoisySerialConnection(self._serial)
+                noisy.setWriteErrorRate(1,150)
+                log = LoggingSerialConnection(noisy, "gcode.log")
+                self._serial_buffered = MarlinSerialProtocol(log)
+            else:
+                self._serial_buffered = MarlinSerialProtocol(self._serial)
+        except Exception as e:
+            Logger.log("e","Unexpected error while initialing MarlinSerialProtocol %s" % e)
+            self._setErrorState("Unexpected error while initialing MarlinSerialProtocol %s " % e)
+            self.close()
+
         temperature_request_timeout = time.time()
         #ok_timeout = time.time()
         while self._connection_state == ConnectionState.connected:
 
             try:
-                if self._serial_buffered:
-                    if self._is_printing and self._serial_buffered.clearToSend():
-                        self._sendNextGcodeLine()
-                    line = self._serial_buffered.readline()
-                else:
-                    line = self._serial.readline()
+                if self._is_printing and self._serial_buffered.clearToSend():
+                    self._sendNextGcodeLine()
+                line = self._serial_buffered.readline()
             except Exception as e:
-                Logger.log("e","Unexpected error while writing serial port %s" % e)
-                self._setErrorState("Unexpected error while writing serial port %s " % e)
+                Logger.log("e","Unexpected error while accessing serial port %s" % e)
+                self._setErrorState("Unexpected error while accessing serial port %s " % e)
                 self.close()
                 break
 
