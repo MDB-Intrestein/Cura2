@@ -236,9 +236,10 @@ class MarlinSerialProtocol:
     # detects a command with a checksum or line number error.
     resendPos = self._isResendRequest(line) or self._isNoLineNumberErr(line)
     if resendPos:
-      # If we got a resend requests, purge lines until timeout, but watch
-      # for any subsequent resend requests (we must only act on the last).
-      while line != b"":
+      # If we got a resend requests, purge lines until input buffer is empty
+      # or timeout, but watch for any subsequent resend requests (we must
+      # only act on the last).
+      while self.serial.in_waiting and line != b"":
         line = self.serial.readline()
         resendPos = self._isResendRequest(line) or self._isNoLineNumberErr(line) or resendPos
       # Process the last received resend request:
