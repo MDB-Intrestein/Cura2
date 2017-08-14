@@ -51,7 +51,6 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
 
         self._serial = None
         self._serial_port = serial_port
-        self._serial_buffered = None
         self._error_state = None
 
         self._connect_thread = threading.Thread(target = self._connect_thread_function)
@@ -71,12 +70,11 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
         self._update_firmware_thread.daemon = True
         self.firmwareUpdateComplete.connect(self._onFirmwareUpdateComplete)
 
-        # self._heatup_wait_start_time = time.time()
+        self._heatup_wait_start_time = time.time()
         self._heatup_state = False
 
         ## Queue for commands that need to be send. Used when command is sent when a print is active.
-        # self._command_queue = queue.Queue()
-        # self._printer_buffer = []
+        self._command_queue = queue.Queue()
 
         self._write_requested = False
         self._is_printing = False
@@ -124,43 +122,43 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
 
     def _setTargetBedTemperature(self, temperature):
         Logger.log("d", "Setting bed temperature to %s", temperature)
-        self.sendCommand("M140 S%s" % temperature)
+        self._sendCommand("M140 S%s" % temperature)
 
     def _setTargetHotendTemperature(self, index, temperature):
         if index == -1:
             index = self._current_hotend
         Logger.log("d", "Setting hotend %s temperature to %s", index, temperature)
-        self.sendCommand("M104 T%s S%s" % (index, temperature))
+        self._sendCommand("M104 T%s S%s" % (index, temperature))
 
     def _setTargetHotendTemperatureAndWait(self, index, temperature):
         if index == -1:
             index = self._current_hotend
         Logger.log("d", "Setting hotend %s temperature to %s", index, temperature)
-        self.sendCommand("M109 T%s S%s" % (index, temperature))
+        self._sendCommand("M109 T%s S%s" % (index, temperature))
 
     def _setHeadPosition(self, x, y , z, speed):
-        self.sendCommand("G0 X%s Y%s Z%s F%s" % (x, y, z, speed))
+        self._sendCommand("G0 X%s Y%s Z%s F%s" % (x, y, z, speed))
 
     def _setHeadX(self, x, speed):
-        self.sendCommand("G0 X%s F%s" % (x, speed))
+        self._sendCommand("G0 X%s F%s" % (x, speed))
 
     def _setHeadY(self, y, speed):
-        self.sendCommand("G0 Y%s F%s" % (y, speed))
+        self._sendCommand("G0 Y%s F%s" % (y, speed))
 
     def _setHeadZ(self, z, speed):
-        self.sendCommand("G0 Z%s F%s" % (z, speed))
+        self._sendCommand("G0 Z%s F%s" % (z, speed))
 
     def _homeHead(self):
-        self.sendCommand("G28")
+        self._sendCommand("G28")
 
     def _homeX(self):
-        self.sendCommand("G28 X")
+        self._sendCommand("G28 X")
 
     def _homeY(self):
-        self.sendCommand("G28 Y")
+        self._sendCommand("G28 Y")
 
     def _homeBed(self):
-        self.sendCommand("G28 Z")
+        self._sendCommand("G28 Z")
 
     ##  A name for the device.
     @pyqtProperty(str, constant = True)
@@ -196,17 +194,17 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
             QMessageBox.critical(None, "Error wiping nozzle", "Printer is not connected  " )
 
     def _moveHead(self, x, y, z, speed):
-        self.sendCommand("G91")
-        self.sendCommand("G0 X%s Y%s Z%s F%s" % (x, y, z, speed))
-        self.sendCommand("G90")
+        self._sendCommand("G91")
+        self._sendCommand("G0 X%s Y%s Z%s F%s" % (x, y, z, speed))
+        self._sendCommand("G90")
 
     def _extrude(self, e, speed):
-        self.sendCommand("G91")
-        self.sendCommand("G0 E%s F%s" % (e, speed))
-        self.sendCommand("G90")
+        self._sendCommand("G91")
+        self._sendCommand("G0 E%s F%s" % (e, speed))
+        self._sendCommand("G90")
 
     def _setHotend(self, num):
-        self.sendCommand("T%i" % num)
+        self._sendCommand("T%i" % num)
 
     ##  Start a print based on a g-code.
     #   \param gcode_list List with gcode (strings).
@@ -242,9 +240,6 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
         self.setTimeTotal(0)
         self.setTimeElapsed(0)
         self._printingStarted()
-
-        # for i in range(0, 4):  # Push first 4 entries before accepting other inputs
-        #    self._sendNextGcodeLine()
 
         self.writeFinished.emit(self)
         # Returning Error.SUCCESS here, currently is unused
@@ -538,7 +533,7 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
                         self._write_requested = False
                         return
 
-                self.sendCommand("M105")  # Send M105 as long as we are listening, otherwise we end up in an undefined state
+                self._sendCommand("M105")  # Send M105 as long as we are listening, otherwise we end up in an undefined state
 
         Logger.log("e", "Baud rate detection for %s failed", self._serial_port)
         self.close()  # Unable to connect, wrap up.
@@ -583,26 +578,22 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
         self._listen_thread.daemon = True
         self._serial = None
         self._serial_port = None
-      # while not self._command_queue.empty():
-      #     self._command_queue.get()
-      # self._printer_buffer.clear()
+        while not self._command_queue.empty():
+            self._command_queue.get()
         self._is_printing = False
         self._is_paused = False
 
-    def _isInvalidCommand(self, cmd):
-        """Sending a M109 or M190 with a temperature of zero may lead to an indefinite wait"""
-        if cmd.startswith("M109") or cmd.startswith("M190"):
+    def _isHeaterCommand(self, cmd):
+        """Checks whether we have a M109 or M190"""
+        return cmd.startswith("M109") or cmd.startswith("M190")
+
+    def _isInfiniteWait(self, cmd):
+        """Sending a heater command with a temperature of zero will lead to an infinite wait"""
+        if self._isHeaterCommand(cmd):
             search = re.search("[RS](-?[0-9\.]+)", cmd)
             return True if search and int(search.group(1)) == 0 else False
-
-    def _serialWriteWithRetry(self, data):
-        """Writes data to the serial port, but retries once if a serial timeout occurs"""
-        try:
-            self._serial.write(data)
-        except serial.SerialTimeoutException:
-            Logger.log("w","Serial timeout while writing to serial port, trying again.")
-            time.sleep(0.5)
-            self._serial.write(data)
+        else:
+            return False
 
     ##  Directly send the command, withouth checking connection state (eg; printing).
     #   \param cmd string with g-code
@@ -632,17 +623,12 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
     #   \param cmd string with g-code
     @pyqtSlot(str)
     def sendCommand(self, cmd):
-      # if "M108" in cmd:
-      #     self._sendCommand(cmd)
-      # self._command_queue.put(cmd)
-        if self._serial is None or self._isInvalidCommand(cmd):
-            return
-        try:
-            self._serialWriteWithRetry(("\n" + cmd + "\n").encode())
-        except Exception as e:
-            Logger.log("e","Unexpected error while writing serial port %s" % e)
-            self._setErrorState("Unexpected error while writing serial port %s " % e)
-            self.close()
+        if "M108" in cmd:
+            self._sendCommand(cmd)
+        if self._isInfiniteWait(cmd):
+            cmd = None
+        if cmd:
+            self._command_queue.put(cmd)
 
     ##  Set the error state with a message.
     #   \param error String with the error message.
@@ -703,34 +689,35 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
 
         # Wrap a MarlinSerialProtocol object around the serial port
         # for serial error correction.
-        try:
-            if DEBUG_SERIAL_RETRY:
-                # Corrupt some fraction of the GCODEs checksum so that we can exercise the
-                # error correction code.
-                noisy = NoisySerialConnection(self._serial)
-                noisy.setWriteErrorRate(1,150)
-                log = LoggingSerialConnection(noisy, "gcode.log")
-                self._serial_buffered = MarlinSerialProtocol(log)
-            else:
-                self._serial_buffered = MarlinSerialProtocol(self._serial)
-        except Exception as e:
-            Logger.log("e","Unexpected error while initialing MarlinSerialProtocol %s" % e)
-            self._setErrorState("Unexpected error while initialing MarlinSerialProtocol %s " % e)
-            self.close()
+        if DEBUG_SERIAL_RETRY:
+            # Corrupt some fraction of the GCODEs checksum so that we can exercise the
+            # error correction code.
+            noisy = NoisySerialConnection(self._serial)
+            noisy.setWriteErrorRate(1,150)
+            log = LoggingSerialConnection(noisy, "gcode.log")
+            serial_proto = MarlinSerialProtocol(log)
+        else:
+            serial_proto = MarlinSerialProtocol(self._serial)
 
         temperature_request_timeout = time.time()
-        #ok_timeout = time.time()
         while self._connection_state == ConnectionState.connected:
 
             try:
-                if self._is_printing and self._serial_buffered.clearToSend():
-                    self._sendNextGcodeLine()
-                line = self._serial_buffered.readline()
+                if serial_proto.clearToSend():
+                    if not self._command_queue.empty():
+                        while not self._command_queue.empty():
+                            cmd = self._command_queue.get()
+                            serial_proto.sendCmdUnreliable(cmd)
+                            if self._isHeaterCommand(cmd):
+                                self._heatup_wait_start_time = time.time()
+                    elif self._is_printing:
+                        self._sendNextGcodeLine(serial_proto)
+
+                line = serial_proto.readline()
             except Exception as e:
-                Logger.log("e","Unexpected error while accessing serial port %s" % e)
-                self._setErrorState("Unexpected error while accessing serial port %s " % e)
+                Logger.log("e", "Unexpected error while accessing serial port. %s" % e)
+                self._setErrorState("Printer has been disconnected")
                 self.close()
-                break
 
             if line is None:
                 break  # None is only returned when something went wrong. Stop listening
@@ -745,9 +732,9 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
             if time.time() > temperature_request_timeout and not self._heatup_state:
                 if self._num_extruders > 1:
                     self._temperature_requested_extruder_index = (self._temperature_requested_extruder_index + 1) % self._num_extruders
-                    self.sendCommand("M105 T%d" % (self._temperature_requested_extruder_index))
+                    serial_proto.sendCmdUnreliable("M105 T%d" % (self._temperature_requested_extruder_index))
                 else:
-                    self.sendCommand("M105")
+                    serial_proto.sendCmdUnreliable("M105")
                 temperature_request_timeout = time.time() + 5
 
             if line.startswith(b"Error:"):
@@ -792,57 +779,21 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
             # elif line == b"" and time.time() > ok_timeout and len(self._printer_buffer) > 0:
             #     line = b"ok"  # Force a timeout (basically, send next command)
 
-#             if b"ok" in line:
-#                 if len(self._printer_buffer) > 0:
-#                     self._printer_buffer.pop(0)
-#                 if self._is_paused:
-#                     line = b""  # Force getting temperature as keep alive
-#                 elif self._is_printing:
-#                     self._sendNextGcodeLine()
-#
-#             elif b"resend" in line.lower() or b"rs" in line:  # Because a resend can be asked with "resend" and "rs"
-#                 self._printer_buffer.clear()
-#                 while not self._command_queue.empty():
-#                     self._command_queue.get()
-#                 try:
-#                     self._gcode_position = int(line.replace(b"N:",b" ").replace(b"N",b" ").replace(b":",b" ").split()[-1])
-#                 except:
-#                     if b"rs" in line:
-#                         self._gcode_position = int(line.split()[1])
-#                 if self._is_printing:
-#                     for i in range(3):
-#                         self._sendNextGcodeLine()
-#
-#             while not self._command_queue.empty() and \
-#                     (len(self._printer_buffer) < 3):
-#                 cmd = self._command_queue.get()
-#                 if cmd.startswith("M109") or cmd.startswith("M190"):
-#                     self._heatup_wait_start_time = time.time()
-#
-#                     search = re.search("R(-?[0-9\.]+)", cmd)
-#                     if search is None:
-#                         search = re.search("S(-?[0-9\.]+)", cmd)
-#
-#                     if search is not None and int(search.group(1)) == 0:
-#                         cmd = None
-#                 if cmd is not None:
-#                     self._printer_buffer.append(cmd)
-#                     self._sendCommand(cmd)
-                    # ok_timeout = time.time() + 30
-                    # if cmd.startswith("G28") or cmd.startswith("G29"):
-                    #     ok_timeout = time.time() + 600
+            if b"ok" in line and self._is_paused:
+                line = b""  # Force getting temperature as keep alive
+
             # Request the temperature on comm timeout (every 2 seconds) when we are not printing.)
             if line == b"":
                 if self._num_extruders > 1:
                     self._temperature_requested_extruder_index = (self._temperature_requested_extruder_index + 1) % self._num_extruders
-                    self.sendCommand("M105 T%d" % self._temperature_requested_extruder_index)
+                    serial_proto.sendCmdUnreliable("M105 T%d" % self._temperature_requested_extruder_index)
                 else:
-                    self.sendCommand("M105")
+                    serial_proto.sendCmdUnreliable("M105")
 
         Logger.log("i", "Printer connection listen thread stopped for %s" % self._serial_port)
 
     ##  Send next Gcode in the gcode list
-    def _sendNextGcodeLine(self):
+    def _sendNextGcodeLine(self, serial):
         if self._gcode_position >= len(self._gcode):
             return
         if self._gcode_position == 100:
@@ -855,29 +806,22 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
                 self.setTimeTotal(elapsed / progress)
         line = self._gcode[self._gcode_position]
 
-        # if ";" in line:
-        #     line = line[:line.find(";")]
-        # line = line.strip()
-
-        # Don't send empty lines. But we do have to send something, so send
-        # m105 instead.
         # Don't send the M0 or M1 to the machine, as M0 and M1 are handled as
         # an LCD menu pause.
-        # if line == "":
-        #     line = "M105"
         try:
             if line == "M0" or line == "M1":
                 self._setJobState("pause")
                 line = "M105"  # Don't send the M0 or M1 to the machine, as M0 and M1 are handled as an LCD menu pause.
             if ("G0" in line or "G1" in line) and "Z" in line:
-                self._current_z = float(re.search("Z([-0-9\.]*)", line).group(1))
+                z = float(re.search("Z([-0-9\.]*)", line).group(1))
+                if self._current_z != z:
+                    self._current_z = z
         except Exception as e:
             Logger.log("e", "Unexpected error with printer connection, could not parse current Z: %s: %s" % (e, line))
             self._setErrorState("Unexpected error: %s" %e)
-      # checksum = functools.reduce(lambda x,y: x^y, map(ord, "N%d%s" % (self._gcode_position, line)))
-      #
-      # self.sendCommand("N%d%s*%d" % (self._gcode_position, line, checksum))
-        self._serial_buffered.enqueueCommand(line)
+        if self._gcode_position == 0:
+            serial.restart()
+        serial.sendCmdReliable(line)
         self._gcode_position += 1
         self.setProgress((self._gcode_position / len(self._gcode)) * 100)
         self.progressChanged.emit()
@@ -1009,15 +953,14 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
         self.setProgress(0)
         self._gcode = []
 
-      # while not self._command_queue.empty():
-      #     self._command_queue.get()
-      # self._printer_buffer.clear()
+        while not self._command_queue.empty():
+            self._command_queue.get()
 
         # Turn off temperatures, fan and steppers
-        self.sendCommand("M140 S0")
-        self.sendCommand("M104 S0")
-        self.sendCommand("M107")
-        self.sendCommand("M84")
+        self._sendCommand("M140 S0")
+        self._sendCommand("M104 S0")
+        self._sendCommand("M107")
+        self._sendCommand("M84")
         Application.getInstance().showPrintMonitor.emit(False)
 
     ##  Check if the process did not encounter an error yet.
