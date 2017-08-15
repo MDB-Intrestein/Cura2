@@ -1,8 +1,6 @@
 # Copyright (c) 2016 Ultimaker B.V.
 # Cura is released under the terms of the AGPLv3 or higher.
 
-DEBUG_SERIAL_RETRY = True
-
 from .avr_isp import stk500v2, ispBase, intelHex
 import serial   # type: ignore
 import threading
@@ -22,8 +20,6 @@ from PyQt5.QtWidgets import QMessageBox
 from PyQt5.QtCore import QUrl, pyqtSlot, pyqtSignal, pyqtProperty
 
 from pyMarlin import MarlinSerialProtocol
-from pyMarlin import NoisySerialConnection
-from pyMarlin import LoggingSerialConnection
 
 from UM.i18n import i18nCatalog
 catalog = i18nCatalog("cura")
@@ -421,6 +417,22 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
 
     ##  Private connect function run by thread. Can be started by calling connect.
     def _connect_thread_function(self):
+        def _onNoResponseReceived():
+            Logger.log("d", "No response from serial connection received.")
+            # Something went wrong with reading, could be that close was called.
+            self.setConnectionState(ConnectionState.closed)
+            self.setConnectionText(catalog.i18nc("@info:status", "Connection to USB device failed"))
+            self._serial_port = None
+
+        def _onConnectionSucceeded():
+            self.setConnectionState(ConnectionState.connected)
+            self.setConnectionText(catalog.i18nc("@info:status", "Connected via USB"))
+            self._listen_thread.start()  # Start listening
+            Logger.log("i", "Established printer connection on port %s" % self._serial_port)
+            if self._write_requested:
+                self.startPrint()
+            self._write_requested = False
+
         port = Application.getInstance().getGlobalContainerStack().getProperty("machine_port", "value")
         if port != "AUTO":
             self._serial_port = port
@@ -468,23 +480,13 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
             while timeout_time > time.time():
                 line = self._readline()
                 if line is None:
-                    Logger.log("d", "No response from serial connection received.")
-                    # Something went wrong with reading, could be that close was called.
-                    self.setConnectionState(ConnectionState.closed)
-                    self.setConnectionText(catalog.i18nc("@info:status", "Connection to USB device failed"))
-                    self._serial_port = None
+                    _onNoResponseReceived()
                     return
 
                 if b"T:" in line:
                     Logger.log("d", "Correct response for connection")
                     self._serial.timeout = 2  # Reset serial timeout
-                    self.setConnectionState(ConnectionState.connected)
-                    self.setConnectionText(catalog.i18nc("@info:status", "Connected via USB"))
-                    self._listen_thread.start()  # Start listening
-                    Logger.log("i", "Established printer connection on port %s" % self._serial_port)
-                    if self._write_requested:
-                        self.startPrint()
-                    self._write_requested = False
+                    _onConnectionSucceeded()
                     return
 
         self.setConnectionText(catalog.i18nc("@info:status", "Autodetecting Baudrate"))
@@ -511,11 +513,7 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
             while timeout_time > time.time():
                 line = self._readline()
                 if line is None:
-                    Logger.log("d", "No response from serial connection received.")
-                    # Something went wrong with reading, could be that close was called.
-                    self.setConnectionState(ConnectionState.closed)
-                    self.setConnectionText(catalog.i18nc("@info:status", "Connection to USB device failed"))
-                    self._serial_port = None
+                    _onNoResponseReceived()
                     return
 
                 if b"T:" in line:
@@ -524,13 +522,7 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
                     sucesfull_responses += 1
                     if sucesfull_responses >= self._required_responses_auto_baud:
                         self._serial.timeout = 2 # Reset serial timeout
-                        self.setConnectionState(ConnectionState.connected)
-                        self.setConnectionText(catalog.i18nc("@info:status", "Connected via USB"))
-                        self._listen_thread.start()  # Start listening
-                        Logger.log("i", "Established printer connection on port %s" % self._serial_port)
-                        if self._write_requested:
-                            self.startPrint()
-                        self._write_requested = False
+                        _onConnectionSucceeded()
                         return
 
                 self._sendCommand("M105")  # Send M105 as long as we are listening, otherwise we end up in an undefined state
@@ -689,15 +681,7 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
 
         # Wrap a MarlinSerialProtocol object around the serial port
         # for serial error correction.
-        if DEBUG_SERIAL_RETRY:
-            # Corrupt some fraction of the GCODEs checksum so that we can exercise the
-            # error correction code.
-            noisy = NoisySerialConnection(self._serial)
-            noisy.setWriteErrorRate(1,150)
-            log = LoggingSerialConnection(noisy, "gcode.log")
-            serial_proto = MarlinSerialProtocol(log)
-        else:
-            serial_proto = MarlinSerialProtocol(self._serial)
+        serial_proto = MarlinSerialProtocol(self._serial)
 
         temperature_request_timeout = time.time()
         while self._connection_state == ConnectionState.connected:
@@ -813,9 +797,7 @@ class USBPrinterOutputDevice(PrinterOutputDevice):
                 self._setJobState("pause")
                 line = "M105"  # Don't send the M0 or M1 to the machine, as M0 and M1 are handled as an LCD menu pause.
             if ("G0" in line or "G1" in line) and "Z" in line:
-                z = float(re.search("Z([-0-9\.]*)", line).group(1))
-                if self._current_z != z:
-                    self._current_z = z
+                self._current_z = float(re.search("Z([-0-9\.]*)", line).group(1))
         except Exception as e:
             Logger.log("e", "Unexpected error with printer connection, could not parse current Z: %s: %s" % (e, line))
             self._setErrorState("Unexpected error: %s" %e)
