@@ -47,8 +47,8 @@ Cura.MachineAction
         Item
         {
             id: bedLevelMachineAction
-            implicitWidth: UM.Theme.getSize("modal_window_minimum").width *1.5
-            implicitHeight: UM.Theme.getSize("modal_window_minimum").height*1.5
+            implicitHeight: base.height > UM.Theme.getSize("modal_window_minimum").height *1.5? base.height : UM.Theme.getSize("modal_window_minimum").height *1.5
+            implicitWidth: base.width > UM.Theme.getSize("modal_window_minimum").width *1.5? base.width : UM.Theme.getSize("modal_window_minimum").width *1.5
 
             UM.I18nCatalog { id: catalog; name: "cura"; }
 
